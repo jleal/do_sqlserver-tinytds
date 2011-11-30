@@ -5,5 +5,5 @@ require 'data_objects/spec/shared/typecast/float_spec'
 
 describe 'DataObjects::SqlServer with Float' do
   it_should_behave_like 'supporting Float'
-  # it_should_behave_like 'supporting Float autocasting'
+  it_should_behave_like 'supporting Float autocasting'
 end

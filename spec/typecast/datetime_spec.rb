@@ -5,5 +5,5 @@ require 'data_objects/spec/shared/typecast/datetime_spec'
 
 describe 'DataObjects::SqlServer with DateTime' do
   it_should_behave_like 'supporting DateTime'
-  # it_should_behave_like 'supporting DateTime autocasting'
+  it_should_behave_like 'supporting DateTime autocasting'
 end

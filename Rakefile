@@ -9,7 +9,7 @@ require 'rake/clean'
 
 ROOT = Pathname(__FILE__).dirname.expand_path
 
-require ROOT + 'lib/do_sqlserver/version'
+require ROOT + 'lib/do_sqlserver_tinytds/version'
 
 JRUBY    = RUBY_PLATFORM =~ /java/
 IRONRUBY = defined?(RUBY_ENGINE) && RUBY_ENGINE == 'ironruby'
@@ -19,7 +19,7 @@ SUDO     = WINDOWS ? '' : ('sudo' unless ENV['SUDOLESS'])
 CLEAN.include(%w[ {tmp,pkg}/ **/*.{o,so,bundle,jar,log,a,gem,dSYM,obj,pdb,exp,DS_Store,rbc,db} ext-java/target ])
 
 
-Rake::Task['build'].clear_actions if Rake::Task.task_defined?('build')
-task :build => [ :java, :gem ]
+#Rake::Task['build'].clear_actions if Rake::Task.task_defined?('build')
+#task :build => [ :java, :gem ]
 
 FileList['tasks/**/*.rake'].each { |task| import task }

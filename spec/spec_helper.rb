@@ -1,5 +1,5 @@
 $TESTING=true
-JRUBY = RUBY_PLATFORM =~ /java/
+JRUBY = nil
 
 require 'rubygems'
 require 'rspec'
@@ -10,18 +10,15 @@ require 'fileutils'
 driver_lib = File.expand_path('../../lib', __FILE__)
 $LOAD_PATH.unshift(driver_lib) unless $LOAD_PATH.include?(driver_lib)
 
-# Prepend data_objects/do_jdbc in the repository to the load path.
-# DO NOT USE installed gems, except when running the specs from gem.
+
 repo_root = File.expand_path('../../..', __FILE__)
-(['data_objects'] << ('do_jdbc' if JRUBY)).compact.each do |lib|
-  lib_path = "#{repo_root}/#{lib}/lib"
-  $LOAD_PATH.unshift(lib_path) if File.directory?(lib_path) && !$LOAD_PATH.include?(lib_path)
-end
+
 
 require 'data_objects'
 require 'data_objects/spec/setup'
 require 'data_objects/spec/lib/pending_helpers'
-require 'do_sqlserver'
+require 'do_sqlserver_tinytds'
+require 'ruby-debug'
 
 DataObjects::SqlServer.logger = DataObjects::Logger.new(STDOUT, :off)
 at_exit { DataObjects.logger.flush }
@@ -29,15 +26,15 @@ at_exit { DataObjects.logger.flush }
 
 CONFIG = OpenStruct.new
 CONFIG.scheme   = 'sqlserver'
-CONFIG.user     = ENV['DO_SQLSERVER_USER'] || 'do_test'
-CONFIG.pass     = ENV['DO_SQLSERVER_PASS'] || 'do_test'
-CONFIG.host     = ENV['DO_SQLSERVER_HOST'] || 'localhost'
+CONFIG.user           = ENV['DO_SQLSERVER_USER'] || 'sa'
+CONFIG.pass           = ENV['DO_SQLSERVER_PASS'] || 'p@$$word'
+#CONFIG.dataserver     = ENV['DO_SQLSERVER_DATASERVER'] || 'MSSQL'
+CONFIG.host           = ENV['DO_SQLSERVER_HOST'] || 'MSSQLLOCAL'
 CONFIG.port     = ENV['DO_SQLSERVER_PORT'] || '1433'
 CONFIG.instance = ENV['DO_SQLSERVER_INSTANCE'] || 'SQLEXPRESS'
-CONFIG.database = ENV['DO_SQLSERVER_DATABASE'] || "/do_test;instance=#{CONFIG.instance};"
+CONFIG.database = ENV['DO_SQLSERVER_DATABASE'] || "datamapper_test"
 
 CONFIG.driver       = 'sqlserver'
-CONFIG.jdbc_driver  = DataObjects::SqlServer.const_get('JDBC_DRIVER') rescue nil
 CONFIG.uri          = ENV["DO_SQLSERVER_SPEC_URI"] ||"#{CONFIG.scheme}://#{CONFIG.user}:#{CONFIG.pass}@#{CONFIG.host}:#{CONFIG.port}#{CONFIG.database}"
 CONFIG.sleep        = "WAITFOR DELAY '00:00:01'"
 
@@ -59,53 +56,53 @@ module DataObjectsSpecHelpers
     EOF
 
     conn.create_command(<<-EOF).execute_non_query
-      CREATE TABLE "users" (
-        "id" int NOT NULL IDENTITY,
-        "name" nvarchar(200) default 'Billy' NULL,
-        "fired_at" timestamp,
-        PRIMARY KEY ("id")
+      CREATE TABLE [users] (
+        [id] int NOT NULL IDENTITY,
+        [name] nvarchar(200) default 'Billy' NULL,
+        [fired_at] timestamp,
+        PRIMARY KEY ([id])
       );
     EOF
 
     conn.create_command(<<-EOF).execute_non_query
-      CREATE TABLE "invoices" (
-        "id" int NOT NULL IDENTITY,
-        "invoice_number" varchar(50) NOT NULL,
-        PRIMARY KEY ("id")
+      CREATE TABLE [invoices] (
+        [id] int NOT NULL IDENTITY,
+        [invoice_number] varchar(50) NOT NULL,
+        PRIMARY KEY ([id])
       );
     EOF
 
     conn.create_command(<<-EOF).execute_non_query
-      CREATE TABLE "widgets" (
-        "id" int NOT NULL IDENTITY,
-        "code" char(8) default 'A14' NULL,
-        "name" varchar(200) default 'Super Widget' NULL,
-        "shelf_location" nvarchar(max) NULL,
-        "description" nvarchar(max) NULL,
-        "image_data" image NULL,
-        "ad_description" varchar(8000) NULL,
-        "ad_image" image NULL,
-        "whitepaper_text" nvarchar(max) NULL,
-        "cad_drawing" image NULL,
-        "flags" bit default 0,
-        "number_in_stock" smallint default 500,
-        "number_sold" int default 0,
-        "super_number" bigint default 9223372036854775807,
-        "weight" float default 1.23,
-        "cost1" real default 10.23,
-        "cost2" decimal(8,2) default 50.23,
-        "release_date" smalldatetime default '2008-02-14',   -- date type is SQL Server 2008 only
-        "release_datetime" datetime default '2008-02-14 00:31:12',
-        "release_timestamp" smalldatetime /* default '2008-02-14 00:31:31' */,
-        -- "status" enum('active','out of stock') NOT NULL default 'active',
-        PRIMARY KEY ("id")
+      CREATE TABLE [widgets] (
+        [id] int NOT NULL IDENTITY,
+        [code] char(8) default 'A14' NULL,
+        [name] varchar(200) default 'Super Widget' NULL,
+        [shelf_location] nvarchar(max) NULL,
+        [description] nvarchar(max) NULL,
+        [image_data] image NULL,
+        [ad_description] varchar(8000) NULL,
+        [ad_image] image NULL,
+        [whitepaper_text] nvarchar(max) NULL,
+        [cad_drawing] image NULL,
+        [flags] bit default 0 NULL,
+        [number_in_stock] smallint default 500,
+        [number_sold] int default 0,
+        [super_number] bigint default 9223372036854775807,
+        [weight] float default 1.23,
+        [cost1] real default 10.23 NULL,
+        [cost2] decimal(8,2) default 50.23 NULL,
+        [release_date] smalldatetime default '2008-02-14' NULL,   -- date type is SQL Server 2008 only
+        [release_datetime] datetime default '2008-02-14 00:31:12' NULL,
+        [release_timestamp] smalldatetime /* default '2008-02-14 00:31:31' */ NULL,
+        -- [status] enum('active','out of stock') NOT NULL default 'active',
+        PRIMARY KEY ([id])
       );
     EOF
 
     1.upto(16) do |n|
-      conn.create_command(<<-EOF).execute_non_query(::Extlib::ByteArray.new("CAD \001 \000 DRAWING"))
+      conn.create_command(<<-EOF).execute_non_query #(::Extlib::ByteArray.new("CAD \001 \000 DRAWING"))
         insert into widgets(code, name, shelf_location, description, image_data, ad_description, ad_image, whitepaper_text, cad_drawing, super_number, weight)
-        VALUES ('W#{n.to_s.rjust(7,"0")}', 'Widget #{n}', 'A14', 'This is a description', 'IMAGE DATA', 'Buy this product now!', 'AD IMAGE DATA', 'String', ?, 1234, 13.4);
+        VALUES ('W#{n.to_s.rjust(7,"0")}', 'Widget #{n}', 'A14', 'This is a description', 'IMAGE DATA', 'Buy this product now!', 'AD IMAGE DATA', 'String', 0x2145475754578785 , 1234, 13.4);
       EOF
     end
 

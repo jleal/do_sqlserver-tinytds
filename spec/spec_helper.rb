@@ -32,7 +32,7 @@ CONFIG.pass           = ENV['DO_SQLSERVER_PASS'] || 'p@$$word'
 CONFIG.host           = ENV['DO_SQLSERVER_HOST'] || 'MSSQLLOCAL'
 CONFIG.port     = ENV['DO_SQLSERVER_PORT'] || '1433'
 CONFIG.instance = ENV['DO_SQLSERVER_INSTANCE'] || 'SQLEXPRESS'
-CONFIG.database = ENV['DO_SQLSERVER_DATABASE'] || "datamapper_test"
+CONFIG.database = ENV['DO_SQLSERVER_DATABASE'] || "/datamapper_test"
 
 CONFIG.driver       = 'sqlserver'
 CONFIG.uri          = ENV["DO_SQLSERVER_SPEC_URI"] ||"#{CONFIG.scheme}://#{CONFIG.user}:#{CONFIG.pass}@#{CONFIG.host}:#{CONFIG.port}#{CONFIG.database}"

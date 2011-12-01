@@ -58,16 +58,6 @@ To compile and install from source:
   * Installation of do_sqlserver is significantly more involved than for other
     drivers. Please see the accompanying `INSTALL.markdown`.
 
- * For JRuby extensions:
-   * Install the Java Development Kit (provided if you are
-     on a recent version of Mac OS X) from <http://java.sun.com>.
-   * Install a recent version of JRuby. Ensure `jruby` is in your `PATH` and/or
-     you have configured the `JRUBY_HOME` environment variable to point to your
-     JRuby installation.
-   * Install `data_objects` and `do_jdbc` with `jruby -S rake install`.
-
- * Then, install this driver with `(jruby -S) rake install`.
-
 Then:
 
     sudo gem install do_sqlserver

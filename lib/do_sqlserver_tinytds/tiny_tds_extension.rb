@@ -2,23 +2,17 @@ require 'tiny_tds'
 
 module TinyTds
   class Client
+    #raw_execute - freetds does not support dynamic sql so
+    #we're going to translate dynamic sql statements into a plain
+    #sql statement
     def raw_execute(text , *var_list)
 
       dynamic_sql = text.clone
       flat_sql = var_list.empty? ? dynamic_sql : process_questioned_sql(dynamic_sql , *var_list)
-#      sql_type = classify_sql(dynamic_sql)
-#
-#      #Convert dynamic sql to flat sql statement
-#      sqls = []
-#      sqls = var_list.collect do |var|
-#        debugger if $debugger_on
-#        dynamic_sql.sub("?" , convert_type_to_s(var , sql_type))
-#      end if !var_list.empty?
-
-      #flat_sql = (!sqls.empty? && sqls.join(";\n")) || dynamic_sql
-      debugger if $debugger_on
       execute(flat_sql)
     end
+
+    :private
 
     def process_questioned_sql(sql , *vars)
       sql_type = classify_sql(sql)
@@ -43,7 +37,7 @@ module TinyTds
       #collect strings in the sql that contains a question_mark
       qstrings = sql.scan(/"[^"]*"/).select{|s| s.include?("?")}
 
-      #temporarily replace
+      #temporarily replace quoted values
       counter = 0
       qstrings.each do |qstring|
         key = "(((####{counter}###)))"
@@ -56,6 +50,8 @@ module TinyTds
       {:sql => sql, :container => container}
     end
 
+    #convert_type_to_s - convert Ruby collection objects fed into the query into
+    #sql strings
     def convert_type_to_s(arg , sql_type)
 
       case sql_type
@@ -83,6 +79,8 @@ module TinyTds
       end
     end
 
+    #convert_type_to_s - convert Ruby object fed into the query into
+    #sql string
     def sql_stringify_value(value)
       case
         when value.is_a?(String)
@@ -93,11 +91,16 @@ module TinyTds
           "NULL"
         when value.is_a?(DateTime)
           value.strftime("'%m/%d/%Y %I:%M:%S %p'")
+        when value.is_a?(Time)
+          DateTime.new(value.year, value.month, value.day,
+                     value.hour, value.min, value.sec,
+                     Rational(value.gmt_offset / 3600, 24)).strftime("'%m/%d/%Y %I:%M:%S %p'")
         else
           "N'#{value.to_s}'"
       end
     end
 
+    #classify_sql - determine if this sql has a between or in
     def classify_sql(sql)
       case
         when sql[/between.+\?/i] #var should be an array
@@ -116,7 +119,5 @@ module TinyTds
       @errstr ||= []
       @errstr
     end
-
-
   end
 end

@@ -1,17 +1,14 @@
 $:.unshift File.dirname(__FILE__)
 
 require 'data_objects'
-
 require 'bigdecimal'
 require 'date'
 require 'base64'
-#require 'do_sqlserver/do_sqlserver' if RUBY_PLATFORM =~ /java/
 require 'do_sqlserver_tinytds/version'
-# JDBC driver has transactions implementation in Java
-require 'do_sqlserver_tinytds/transaction' #if RUBY_PLATFORM !~ /java/
+require 'do_sqlserver_tinytds/transaction'
 require 'do_sqlserver_tinytds/tiny_tds_extension'
 require 'do_sqlserver_tinytds/addressable_extension'
-require 'pry'
+
 
   module DataObjects
     module SqlServer
@@ -20,7 +17,6 @@ require 'pry'
         def method_missing(method, *args)
           if @connection.respond_to?(method)
             begin
-              #args[0] - tiny tds accepts just one arg
               @connection.send(method , *args)
             rescue TinyTds::Error => te
               case te.db_error_number
@@ -37,14 +33,7 @@ require 'pry'
           end
         end
 
-        def debugger_on=(value)
-          $debugger_on = value
-        end
-
         def initialize uri
-          $debugger_on = false
-          # REVISIT: Allow uri.query to modify this connection's mode?
-          #host = uri.host.blank? ? "localhost" : uri.host
           host = uri.host
           user = uri.user || "sa"
           password = uri.password || ""
@@ -58,28 +47,21 @@ require 'pry'
             @encoding = "UTF-8"
           end
 
-          @options = {:username => uri.user,
-                     :password => uri.password,
+          @options = {:username => user,
+                     :password => password,
                      :port => port ,
                      :encoding => @encoding,
-                     :timeout => 5000
+                     :timeout => 5000,
+                     :dataserver => host,
+                     :database => path
                      }
 
           @options[:dataserver] = host
 
-#          case
-#            when uri.dataserver
-#              options[:dataserver] = uri.dataserver
-#            when host
-#              options[:host] = host
-#          end
-
-          #connection_string = "DBI:ODBC:DRIVER=FreeTDS;SERVERNAME=sqlserver;DATABASE=#{path};"
           begin
             @connection = TinyTds::Client.new(@options).tap {|client| client.execute("SET ANSI_NULLS ON").do}
             #@connection = DBI.connect(connection_string, user, password)
           rescue Exception => e
-            # Place to debug connection failures
             raise
           end
 
@@ -125,12 +107,16 @@ require 'pry'
         def raw
           @connection
         end
+
+        :private
+
+        #debugger_on - used only for development when debugging things
+        def debugger_on=(value)
+          $debugger_on = value
+        end
       end
 
       class Command < DataObjects::Command
-        # Theoretically, SCOPE_IDENTIY should be preferred, but there are cases where it returns a stale ID, and I don't know why.
-        #IDENTITY_ROWCOUNT_QUERY = 'SELECT SCOPE_IDENTITY(), @@ROWCOUNT'
-        #IDENTITY_ROWCOUNT_QUERY = 'SELECT @@IDENTITY, @@ROWCOUNT'
         IDENTITY_ROWCOUNT_QUERY = 'SELECT CAST(SCOPE_IDENTITY() AS bigint) AS Ident, @@ROWCOUNT AS AffectedRows'
 
         attr_reader :types
@@ -147,15 +133,8 @@ require 'pry'
           DataObjects::SqlServer.check_params @text, args
 
           begin
-            #convert dynamic query into regular queries
-
-            #debugger if @text.include?("tester") && @text.include?("non_existent_table")
             handle = @connection.raw_execute(@text , *args)
             handle.do
-#          rescue DBI::DatabaseError => e
-#            handle = @connection.raw.handle
-#            handle.finish if handle && handle.respond_to?(:finish) && !handle.finished?
-#            DataObjects::SqlServer.raise_db_error(e, @text, args)
           rescue TinyTds::Error => te
 
             handle.cancel if handle && handle.respond_to?(:cancel) && !@connection.sqlsent?
@@ -170,26 +149,13 @@ require 'pry'
             raise e
           end
 
-
-          #handle.finish if handle && handle.respond_to?(:finish) && !handle.finished?
-
           # Get the inserted ID and the count of affected rows:
           inserted_id = @connection.execute("SELECT CAST(SCOPE_IDENTITY() AS bigint) AS Ident").each.first['Ident']
-          row_count = handle.affected_rows#@connection.execute("SELECT @@ROWCOUNT AS AffectedRows").each.first['AffectedRows']
-
-#          inserted_id, row_count = nil, nil
-#
-#          if (handle = @connection.raw_execute(IDENTITY_ROWCOUNT_QUERY))
-#            #row1 = Array(Array(handle.each(:as => :array))[0])
-#            row1 = handle.each.first
-#            inserted_id, row_count = row1['Ident'] && row1['Ident'].to_i, row1['AffectedRows'].to_i
-#            handle.cancel
-#          end
+          row_count = handle.affected_rows
           Result.new(self, row_count, inserted_id)
         end
 
         def execute_reader *args
-          #debugger if args && args.first == "Buy this product now!"
           DataObjects::SqlServer.check_params @text, args
           massage_limit_and_offset args
           begin
@@ -199,11 +165,6 @@ require 'pry'
 
            handle.cancel if handle && handle.respond_to?(:cancel) && !@connection.sqlsent?
            raise
-#          rescue
-#
-#            handle = @connection.raw.handle
-#            handle.finish if handle && handle.respond_to?(:finish) && !handle.finished?
-#            raise
           end
 
           Reader.new(self, handle)
@@ -222,7 +183,7 @@ require 'pry'
             offset = offset.to_i
             limit = limit.to_i
 
-            # Reverse the sort direction of each field in the ORDER BY:
+            #Reverse the sort direction of each field in the ORDER BY:
             rev_order = order.split(/, */).map{ |f|
               f =~ /(.*) DESC *$/ ? $1 : f+" DESC"
             }*", "
@@ -233,26 +194,19 @@ require 'pry'
       end
 
       class Result < DataObjects::Result
-
       end
 
-      # REVISIT: There is no data type conversion happening here. That will make DataObjects sad.
       class Reader < DataObjects::Reader
-
-
         def initialize command, handle
           @command, @handle = command, handle
           return unless @handle
 
-          #@fields = handle.column_names
           @fields = handle.fields
 
-          # REVISIT: Prefetch results like AR's adapter does. ADO is a bit strange about handle lifetimes, don't move this until you can test it.
           @rows = []
           types = @command.types
           if types && types.size != @fields.size
-            @handle.cancel if @handle && @handle.respond_to?(:cancel) #&& !@connection.sqlsent?
-            #@handle.finish if @handle && @handle.respond_to?(:finish) && !@handle.finished?
+            @handle.cancel if @handle && @handle.respond_to?(:cancel)
             raise ArgumentError, "Field-count mismatch. Expected #{types.size} fields, but the query yielded #{@fields.size}"
           end
 
@@ -263,47 +217,63 @@ require 'pry'
               field += 1
 
               next value if !types && !value.is_a?(Time)
-              debugger if $debugger_on
 
-              if types.nil? && value.is_a?(Time)
-                time_to_date_time(value)
-              elsif value.nil? || types[field] == NilClass then
-                nil
-              elsif (t = types[field]) == Integer
-                Integer(value)
-              elsif value.is_a?(t)
-                value
-              elsif t == Float
-                value && Float(value)
-              elsif t == TrueClass
-                value
-              elsif t == String
-                value.to_s
-              elsif t == DateTime
-                case
-                  when value.is_a?(Time)
-                    time_to_date_time(value)
-                  when value.is_a?(String)
-                    DateTime.parse(value)
+              field_type = types && types[field]
+              value_class = value.class
+
+              r_value = case
+                when field_type == NilClass || value.nil?
+                  nil
+                when field_type.nil? && value.is_a?(Time)
+                  #sql small dates have zeros for hr, min, sec
+                  # and needs to be cast as Date, else cast as DateTime
+                  if (value.hour + value.min + value.sec) == 0
+                    time_to_date(value)
                   else
-                    DateTime.parse(value.to_s)
-                end
-              else
-                #_value = value.respond_to?(:to_s) ? value.to_s : value
-                begin
-                  return_value = t.new(value)
-                rescue Exception => e
-                  if e.message[/can't convert \w+ into String/]
-                    return_value = t.new(value.to_s)
+                    time_to_date_time(value)
                   end
-                end
-                return_value
-                #(return_value.respond_to?(:to_s) && return_value.to_s) || return_value
+                when value.is_a?(field_type) || value_class.kind_of?(field_type) || field_type == TrueClass
+                  value
+                when field_type == Integer
+                  Integer(value)
+                when field_type == Float
+                  Float(value)
+                when field_type == String
+                  raise "Value '#{value.inspect}' does not respond to #to_s" unless value.respond_to?(:to_s)
+                  value.to_s
+                when field_type == DateTime
+                  case
+                    when value.is_a?(Time)
+                      time_to_date_time(value)
+                    when value.is_a?(String)
+                      DateTime.parse(value)
+                    else
+                      DateTime.parse(value.to_s)
+                  end
+                when field_type == Date
+                  case
+                    when value.is_a?(Time) || value.is_a?(DateTime)
+                      Date.parse(value.strftime('%Y/%m/%d'))
+                    else
+                      Date.parse(value)
+                  end
+                when field_type == Time
+                  Time.parse(value)
+                when field_type == BigDecimal
+                  BigDecimal.new(value.to_s)
+                else
+                  if value.respond_to?(:to_s)
+                    value.to_s
+                  else
+                    value
+                  end
               end
+
+              r_value
+
             end
           end
           @handle.cancel if @handle && @handle.respond_to?(:cancel)
-          #@handle.finish if @handle && @handle.respond_to?(:finish) && !@handle.finished?
           @current_row = -1
         end
 
@@ -324,8 +294,6 @@ require 'pry'
         def values
           raise DataObjects::DataError.new("First row has not been fetched") if @current_row < 0
           raise DataObjects::DataError.new("Last row has been processed") if @current_row >= @rows.size
-          #raise StandardError.new("First row has not been fetched") if @current_row < 0
-          #raise StandardError.new("Last row has been processed") if @current_row >= @rows.size
           @rows[@current_row]
         end
 
@@ -337,7 +305,6 @@ require 'pry'
           @fields.size
         end
 
-        # REVISIT: This is being deprecated
         def row_count
           @rows.size
         end
@@ -348,6 +315,10 @@ require 'pry'
           DateTime.new(value.year, value.month, value.day,
                      value.hour, value.min, value.sec,
                      Rational(value.gmt_offset / 3600, 24))
+        end
+
+        def time_to_date(value)
+          Date.parse(time_to_date_time(value).strftime('%Y/%m/%d'))
         end
       end
 
@@ -363,12 +334,9 @@ require 'pry'
         msg = e.to_str
         case msg
         when /Too much parameters/, /No data found/
-          #puts "'#{cmd}' (#{args.map{|a| a.inspect}*", "}): #{e.to_str}"
           check_params(cmd, args)
         else
           e.errstr << " running '#{cmd}'"
-          #puts "'#{cmd}' (#{args.map{|a| a.inspect}*", "}): #{e.to_str}"
-          #debugger
         end
         raise DataObjects::SQLError.new(e.errstr)
       end

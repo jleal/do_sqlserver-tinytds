@@ -23,13 +23,20 @@ require 'do_sqlserver_tinytds/addressable_extension'
                 when 20019
                   #Got a pending transcation there, lets make it let go
                   @connection.close
-                  @connection = TinyTds::Client.new(@options).tap {|client| client.execute("SET ANSI_NULLS ON").do}
+                  set_tiny_tds_connection
                   #give it another try
                   @connection.send(method, *args)
                 else
                   raise te
               end
             end
+          end
+        end
+
+        def set_tiny_tds_connection
+          @connection = TinyTds::Client.new(@options).tap do |client|
+            client.execute("SET ANSI_NULLS ON").do
+            client.execute("SET QUOTED_IDENTIFIER ON").do
           end
         end
 
@@ -59,7 +66,7 @@ require 'do_sqlserver_tinytds/addressable_extension'
           @options[:dataserver] = host
 
           begin
-            @connection = TinyTds::Client.new(@options).tap {|client| client.execute("SET ANSI_NULLS ON").do}
+            set_tiny_tds_connection
             #@connection = DBI.connect(connection_string, user, password)
           rescue Exception => e
             raise

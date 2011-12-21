@@ -2,8 +2,8 @@
 
 Gem::Specification.new do |s|
   s.name = %q{do_sqlserver-tinytds}
-  s.version = "0.10.7"
-  s.platform = Gem::Platform::CURRENT
+  s.version = "0.10.8"
+  #s.platform = Gem::Platform::CURRENT
 
   s.required_rubygems_version = Gem::Requirement.new(">= 0") if s.respond_to? :required_rubygems_version=
   s.authors = ["Juan Leal"]
